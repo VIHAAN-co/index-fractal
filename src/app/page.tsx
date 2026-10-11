@@ -1,35 +1,21 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { IndexKey, AnalysisResult } from '@/lib/types';
-import { ScalpAnalysis } from '@/lib/scalperEngine';
+import { IndexKey, ComparisonData } from '@/lib/types';
 import { Header } from '@/components/Header';
 import { IndexSelector } from '@/components/IndexSelector';
-import { MetricCards } from '@/components/MetricCards';
-import { ChartViewer } from '@/components/ChartViewer';
-import { AnalogsList } from '@/components/AnalogsList';
-import { AiBrief } from '@/components/AiBrief';
-import { ScalperView } from '@/components/ScalperView';
-import { Sliders, AlertTriangle, Zap, Compass } from 'lucide-react';
+import { SideBySideComparator } from '@/components/SideBySideComparator';
+import { Sliders, AlertTriangle } from 'lucide-react';
 
 export default function Home() {
-  const [mode, setMode] = useState<'fractal' | 'scalper'>('scalper');
   const [selectedSymbol, setSelectedSymbol] = useState<IndexKey>('^NSEI');
-  const [patternWindow, setPatternWindow] = useState<number>(20);
-
-  // Fractal Data
-  const [fractalData, setFractalData] = useState<AnalysisResult | null>(null);
-  const [isLoadingFractal, setIsLoadingFractal] = useState<boolean>(false);
-
-  // Scalper Data
-  const [scalpData, setScalpData] = useState<ScalpAnalysis | null>(null);
-  const [isLoadingScalp, setIsLoadingScalp] = useState<boolean>(false);
-
+  const [patternWindow, setPatternWindow] = useState<number>(10);
+  const [data, setData] = useState<ComparisonData | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch 5-Year Fractal Data
-  const fetchFractal = useCallback(async (symbol: IndexKey, windowSize: number) => {
-    setIsLoadingFractal(true);
+  const fetchComparison = useCallback(async (symbol: IndexKey, windowSize: number) => {
+    setIsLoading(true);
     setError(null);
     try {
       const res = await fetch(
@@ -37,98 +23,70 @@ export default function Home() {
       );
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to fetch pattern analysis');
+        throw new Error(json.error || 'Failed to load historical comparison');
       }
-      setFractalData(json.data);
+      setData(json.data);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'An unexpected error occurred loading fractal data');
+      setError(err.message || 'An unexpected error occurred while loading data');
     } finally {
-      setIsLoadingFractal(false);
-    }
-  }, []);
-
-  // Fetch 1-Min Scalp Data
-  const fetchScalp = useCallback(async (symbol: IndexKey) => {
-    setIsLoadingScalp(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/scalp?symbol=${encodeURIComponent(symbol)}`);
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to fetch 1-min scalp data');
-      }
-      setScalpData(json.data);
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'An unexpected error occurred loading scalp data');
-    } finally {
-      setIsLoadingScalp(false);
+      setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (mode === 'scalper') {
-      fetchScalp(selectedSymbol);
-    } else {
-      fetchFractal(selectedSymbol, patternWindow);
-    }
-  }, [mode, selectedSymbol, patternWindow, fetchScalp, fetchFractal]);
-
-  const activePrice =
-    mode === 'scalper' ? scalpData?.currentPrice : fractalData?.currentPrice;
-  const activeChangePct =
-    mode === 'scalper' ? scalpData?.change1dPct : fractalData?.change1dPct;
-  const isLoading = mode === 'scalper' ? isLoadingScalp : isLoadingFractal;
+    fetchComparison(selectedSymbol, patternWindow);
+  }, [selectedSymbol, patternWindow, fetchComparison]);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans">
       <Header
-        lastUpdated={fractalData?.lastUpdated}
+        lastUpdated={data?.lastUpdated}
         isRefreshing={isLoading}
-        onRefresh={() => {
-          if (mode === 'scalper') fetchScalp(selectedSymbol);
-          else fetchFractal(selectedSymbol, patternWindow);
-        }}
+        onRefresh={() => fetchComparison(selectedSymbol, patternWindow)}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-8 space-y-6">
-        {/* Mode Switcher: 1-Min Scalper vs 5-Year Fractal */}
-        <div className="flex items-center justify-between p-1.5 rounded-2xl bg-zinc-900 border border-zinc-800 shadow-inner">
-          <button
-            onClick={() => setMode('scalper')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-mono text-sm font-bold transition ${
-              mode === 'scalper'
-                ? 'bg-amber-500 text-zinc-950 shadow-lg shadow-amber-500/20'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <Zap className="h-4 w-4" />
-            <span>1-MIN SCALPER MODE (INTRADAY VWAP & ORB)</span>
-          </button>
-
-          <button
-            onClick={() => setMode('fractal')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-mono text-sm font-bold transition ${
-              mode === 'fractal'
-                ? 'bg-amber-500 text-zinc-950 shadow-lg shadow-amber-500/20'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <Compass className="h-4 w-4" />
-            <span>5-YEAR FRACTAL ANALYZER (HISTORICAL ANALOGS)</span>
-          </button>
-        </div>
-
-        {/* Index Selector (Nifty, Bank Nifty, Sensex) */}
+        {/* Index Selector (NIFTY 50, BANK NIFTY, SENSEX) */}
         <div>
           <IndexSelector
             selected={selectedSymbol}
             onSelect={(sym) => setSelectedSymbol(sym)}
-            currentPrice={activePrice}
-            change1dPct={activeChangePct}
+            currentPrice={data?.currentPrice}
+            change1d={data?.change1d}
+            change1dPct={data?.change1dPct}
             isLoading={isLoading}
           />
+        </div>
+
+        {/* Lookback Window Selector */}
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border border-zinc-800 bg-zinc-900/50">
+          <div className="flex items-center gap-2 text-xs font-mono text-zinc-300">
+            <Sliders className="h-4 w-4 text-amber-400" />
+            <span>Pattern Lookback Window:</span>
+            <span className="font-bold text-amber-400">{patternWindow} Trading Sessions</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 font-mono text-xs">
+            {[
+              { days: 5, label: '5 Sessions (1 Wk)' },
+              { days: 10, label: '10 Sessions (2 Wks)' },
+              { days: 15, label: '15 Sessions (3 Wks)' },
+              { days: 20, label: '20 Sessions (1 Mo)' },
+            ].map(({ days, label }) => (
+              <button
+                key={days}
+                onClick={() => setPatternWindow(days)}
+                className={`px-3 py-1.5 rounded-lg border transition ${
+                  patternWindow === days
+                    ? 'bg-amber-500 text-zinc-950 border-amber-500 font-bold shadow'
+                    : 'bg-zinc-800/80 text-zinc-400 border-zinc-700 hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Error Notification */}
@@ -141,82 +99,22 @@ export default function Home() {
           </div>
         )}
 
-        {/* SCALPER VIEW */}
-        {mode === 'scalper' && (
-          <>
-            {isLoadingScalp && !scalpData ? (
-              <div className="py-24 flex flex-col items-center justify-center space-y-3 text-zinc-500">
-                <div className="h-8 w-8 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
-                <p className="font-mono text-xs">
-                  Streaming 1-minute bars, calculating session VWAP and ORB levels...
-                </p>
-              </div>
-            ) : scalpData ? (
-              <ScalperView data={scalpData} />
-            ) : null}
-          </>
-        )}
-
-        {/* FRACTAL VIEW */}
-        {mode === 'fractal' && (
-          <>
-            {/* Pattern Window Slider / Toggle */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40">
-              <div className="flex items-center gap-2 text-xs font-mono text-zinc-300">
-                <Sliders className="h-4 w-4 text-amber-400" />
-                <span>Pattern Length Window:</span>
-                <span className="font-bold text-amber-400">{patternWindow} Trading Days</span>
-                <span className="text-zinc-500 text-[11px] hidden sm:inline">
-                  (~1 month price wave)
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5 font-mono text-xs">
-                {[15, 20, 30, 45].map((w) => (
-                  <button
-                    key={w}
-                    onClick={() => setPatternWindow(w)}
-                    className={`px-3 py-1 rounded-lg transition ${
-                      patternWindow === w
-                        ? 'bg-amber-500 text-zinc-950 font-bold'
-                        : 'bg-zinc-800/70 text-zinc-400 hover:text-white hover:bg-zinc-800'
-                    }`}
-                  >
-                    {w}D
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {isLoadingFractal && !fractalData ? (
-              <div className="py-24 flex flex-col items-center justify-center space-y-3 text-zinc-500">
-                <div className="h-8 w-8 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
-                <p className="font-mono text-xs">
-                  Scanning 5 years of daily candles & running pattern matching...
-                </p>
-              </div>
-            ) : fractalData ? (
-              <>
-                <MetricCards data={fractalData} />
-                <ChartViewer
-                  candles={fractalData.recentCandles}
-                  patternWindow={fractalData.patternWindow}
-                  matches={fractalData.matches}
-                  symbolName={fractalData.name}
-                />
-                <AiBrief
-                  summary={fractalData.summary}
-                  bias={fractalData.statistics.overallBias}
-                />
-                <AnalogsList matches={fractalData.matches} />
-              </>
-            ) : null}
-          </>
-        )}
+        {/* Loading Spinner */}
+        {isLoading && !data ? (
+          <div className="py-24 flex flex-col items-center justify-center space-y-3 text-zinc-500">
+            <div className="h-8 w-8 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
+            <p className="font-mono text-xs">
+              Scanning 5 years of daily market history for matching chart structures...
+            </p>
+          </div>
+        ) : data ? (
+          /* Side-by-Side Dual Chart & TradingView Verification Engine */
+          <SideBySideComparator data={data} />
+        ) : null}
       </main>
 
       <footer className="border-t border-zinc-900 py-4 px-6 text-center text-xs text-zinc-600 font-mono">
-        IndexFractal · Institutional 1-Min Scalper & 5-Year Analog Engine · Stark Industries Terminal
+        IndexFractal · Real Verifiable Historical Chart Comparator · Stark Industries Terminal
       </footer>
     </div>
   );
