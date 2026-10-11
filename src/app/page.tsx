@@ -7,6 +7,7 @@ import { SideBySideComparator } from '@/components/SideBySideComparator';
 import { AlertTriangle } from 'lucide-react';
 
 export default function Home() {
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [timeframeMode, setTimeframeMode] = useState<'daily' | '1m'>('1m');
   const [selectedSymbol, setSelectedSymbol] = useState<IndexKey>('^NSEBANK');
   const [patternWindow, setPatternWindow] = useState<number>(20);
@@ -20,7 +21,7 @@ export default function Home() {
     try {
       let endpoint = '';
       if (timeframeMode === '1m') {
-        endpoint = `/api/analog-1m?window=${patternWindow}`;
+        endpoint = `/api/analog-1m?symbol=${encodeURIComponent(selectedSymbol)}&window=${patternWindow}`;
       } else {
         endpoint = `/api/analyze?symbol=${encodeURIComponent(selectedSymbol)}&window=${patternWindow}`;
       }
@@ -43,8 +44,14 @@ export default function Home() {
     fetchComparison();
   }, [fetchComparison]);
 
+  const isDark = theme === 'dark';
+
   return (
-    <div className="min-h-screen bg-[#131722] text-[#d1d4dc] flex flex-col font-sans select-none overflow-x-hidden">
+    <div
+      className={`min-h-screen flex flex-col font-sans select-none overflow-x-hidden transition-colors ${
+        isDark ? 'bg-[#131722] text-[#d1d4dc]' : 'bg-[#ffffff] text-[#131722]'
+      }`}
+    >
       {/* TradingView Top Toolbar */}
       <TradingViewToolbar
         selectedSymbol={selectedSymbol}
@@ -57,12 +64,13 @@ export default function Home() {
         patternWindow={patternWindow}
         onSelectWindow={(w) => setPatternWindow(w)}
         currentPrice={data?.currentPrice}
-        lastUpdated={data?.lastUpdated}
         isRefreshing={isLoading}
         onRefresh={fetchComparison}
+        theme={theme}
+        onToggleTheme={() => setTheme(isDark ? 'light' : 'dark')}
       />
 
-      {/* Main Terminal: Full Width Dual Charts */}
+      {/* Main Terminal: Full Width Dual Charts with Working Drawing Tools */}
       <main className="flex-1 p-2 space-y-2 overflow-y-auto">
         {error && (
           <div className="p-3 rounded bg-[#f23645]/10 border border-[#f23645]/30 text-[#f23645] flex items-center gap-2 text-xs font-mono">
@@ -76,12 +84,12 @@ export default function Home() {
             <div className="h-8 w-8 rounded-full border-2 border-[#2962ff] border-t-transparent animate-spin" />
             <p className="font-mono text-xs">
               {timeframeMode === '1m'
-                ? 'Executing DTW across 150,000 Supabase historical 1-minute bars...'
-                : 'Computing fractal alignment across 5 years of daily market history...'}
+                ? `Executing DTW for ${selectedSymbol} across 1-minute historical bars...`
+                : `Computing fractal alignment for ${selectedSymbol} across 5 years of daily history...`}
             </p>
           </div>
         ) : data ? (
-          <SideBySideComparator data={data} />
+          <SideBySideComparator data={data} theme={theme} />
         ) : null}
       </main>
     </div>

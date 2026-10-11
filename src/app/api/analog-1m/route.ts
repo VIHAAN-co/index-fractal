@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { Candle, AnalogMatch } from '@/lib/types';
+import { Candle, AnalogMatch, IndexKey, INDICES } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,10 +41,20 @@ function dynamicTimeWarping(s1: number[], s2: number[], w: number = 3): number {
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const windowSize = parseInt(searchParams.get('window') || '20', 10);
+    const rawSymbol = searchParams.get('symbol') || '^NSEBANK';
+    const rawWindow = parseInt(searchParams.get('window') || '20', 10);
 
-    // 1. Fetch live 1-minute intraday bars from Yahoo Finance for Bank Nifty
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/%5ENSEBANK?range=1d&interval=1m&includePrePost=false`;
+    const validSymbols: IndexKey[] = ['^NSEBANK', '^NSEI', '^BSESN'];
+    const symbol: IndexKey = validSymbols.includes(rawSymbol as IndexKey)
+      ? (rawSymbol as IndexKey)
+      : '^NSEBANK';
+
+    const windowSize = isNaN(rawWindow) || rawWindow < 10 || rawWindow > 60 ? 20 : rawWindow;
+    const indexInfo = INDICES[symbol];
+
+    // 1. Fetch live 1-minute intraday bars from Yahoo Finance
+    const encoded = encodeURIComponent(symbol);
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encoded}?range=7d&interval=1m&includePrePost=false`;
     const yfRes = await fetch(url, {
       headers: {
         'User-Agent':
@@ -55,7 +65,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!yfRes.ok) {
-      throw new Error(`Failed to fetch current 1-min data: HTTP ${yfRes.status}`);
+      throw new Error(`Failed to fetch 1-min data for ${symbol}: HTTP ${yfRes.status}`);
     }
 
     const yfJson = await yfRes.json();
@@ -63,11 +73,11 @@ export async function GET(request: NextRequest) {
     const timestamps: number[] = result?.timestamp || [];
     const quote = result?.indicators?.quote?.[0] || {};
 
-    const currentLiveCandles: Candle[] = [];
+    const allLiveCandles: Candle[] = [];
     for (let i = 0; i < timestamps.length; i++) {
       const c = quote.close?.[i];
       if (c !== null && c !== undefined && !isNaN(c)) {
-        currentLiveCandles.push({
+        allLiveCandles.push({
           time: timestamps[i],
           open: Math.round((quote.open?.[i] || c) * 100) / 100,
           high: Math.round((quote.high?.[i] || c) * 100) / 100,
@@ -78,63 +88,97 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (currentLiveCandles.length < windowSize) {
-      throw new Error(`Insufficient live 1-min candles (${currentLiveCandles.length})`);
+    if (allLiveCandles.length < windowSize) {
+      throw new Error(`Insufficient 1-min candles for ${symbol}`);
     }
 
-    const activeSlice = currentLiveCandles.slice(-windowSize);
+    // Active recent window
+    const activeSlice = allLiveCandles.slice(-windowSize);
     const activeCloses = activeSlice.map((c) => c.close);
     const activeZScore = zScoreNormalize(activeCloses);
-
-    // 2. Query deep 1-minute historical sessions from Supabase
-    const { data: histRows, error: sbError } = await supabase
-      .from('banknifty_1m')
-      .select('date, time, open, high, low, close')
-      .order('id', { ascending: false })
-      .limit(3000);
-
-    if (sbError || !histRows || histRows.length < windowSize + 15) {
-      throw new Error(sbError?.message || 'Insufficient deep historical 1-min data in Supabase');
-    }
 
     interface HistItem {
       candle: Candle;
       dateLabel: string;
     }
 
-    const histItems: HistItem[] = histRows.map((r, idx) => {
-      let unixSec = 0;
-      try {
-        const [d, m, y] = r.date.split('-');
-        const [hr, min, sec] = r.time.split(':');
-        const dt = new Date(
-          Date.UTC(
-            parseInt(y),
-            parseInt(m) - 1,
-            parseInt(d),
-            parseInt(hr),
-            parseInt(min),
-            parseInt(sec || 0)
-          )
-        );
-        unixSec = Math.floor(dt.getTime() / 1000);
-      } catch (e) {
-        unixSec = 1713783000 + idx * 60;
-      }
-      return {
-        dateLabel: `${r.date} ${r.time.slice(0, 5)}`,
-        candle: {
-          time: unixSec,
-          open: parseFloat(r.open),
-          high: parseFloat(r.high),
-          low: parseFloat(r.low),
-          close: parseFloat(r.close),
-          volume: 0,
-        },
-      };
-    });
+    let histItems: HistItem[] = [];
 
-    histItems.reverse();
+    // 2. Query historical bars:
+    // If Bank Nifty: use Supabase 150,000 historical bars
+    // If Nifty / Sensex: use prior sessions from the 7-day 1-minute dataset (2,600 bars)
+    if (symbol === '^NSEBANK') {
+      try {
+        const { data: histRows } = await supabase
+          .from('banknifty_1m')
+          .select('date, time, open, high, low, close')
+          .order('id', { ascending: false })
+          .limit(3000);
+
+        if (histRows && histRows.length >= windowSize + 15) {
+          histItems = histRows.map((r, idx) => {
+            let unixSec = 0;
+            try {
+              const [d, m, y] = r.date.split('-');
+              const [hr, min, sec] = r.time.split(':');
+              const dt = new Date(
+                Date.UTC(
+                  parseInt(y),
+                  parseInt(m) - 1,
+                  parseInt(d),
+                  parseInt(hr),
+                  parseInt(min),
+                  parseInt(sec || 0)
+                )
+              );
+              unixSec = Math.floor(dt.getTime() / 1000);
+            } catch (e) {
+              unixSec = 1713783000 + idx * 60;
+            }
+            return {
+              dateLabel: `${r.date} ${r.time.slice(0, 5)}`,
+              candle: {
+                time: unixSec,
+                open: parseFloat(r.open),
+                high: parseFloat(r.high),
+                low: parseFloat(r.low),
+                close: parseFloat(r.close),
+                volume: 0,
+              },
+            };
+          });
+          histItems.reverse();
+        }
+      } catch (e) {
+        console.error('Supabase query error:', e);
+      }
+    }
+
+    // Fallback or for Nifty / Sensex: use prior trading sessions
+    if (histItems.length === 0) {
+      const historicalCandlesPool = allLiveCandles.slice(
+        0,
+        Math.max(windowSize + 20, allLiveCandles.length - windowSize - 30)
+      );
+      histItems = historicalCandlesPool.map((c) => {
+        const d = new Date((c.time as number) * 1000);
+        const dateStr = d.toLocaleDateString('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        });
+        const timeStr = d.toLocaleTimeString('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        return {
+          dateLabel: `${dateStr} ${timeStr}`,
+          candle: c,
+        };
+      });
+    }
 
     // 3. Slide window & compute DTW distance
     const candidates: { startIndex: number; dtwDistance: number }[] = [];
@@ -219,6 +263,10 @@ export async function GET(request: NextRequest) {
     }
 
     const currentCandle = activeSlice[activeSlice.length - 1];
+    const prevCandle = activeSlice[activeSlice.length - 2] || currentCandle;
+    const change1d = Math.round((currentCandle.close - prevCandle.close) * 100) / 100;
+    const change1dPct = Math.round((change1d / prevCandle.close) * 10000) / 100;
+
     const lastDate = new Date((currentCandle.time as number) * 1000);
     const lastDateStr = lastDate.toLocaleTimeString('en-GB', {
       timeZone: 'Asia/Kolkata',
@@ -229,16 +277,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        symbol: '^NSEBANK',
-        name: 'BANK NIFTY (1-MIN BARS)',
-        tvSymbol: 'NSE:BANKNIFTY',
+        symbol,
+        name: `${indexInfo.name} (1-MIN)`,
+        tvSymbol: indexInfo.tvSymbol,
         currentPrice: currentCandle.close,
-        change1d: 0,
-        change1dPct: 0,
+        change1d,
+        change1dPct,
         lastUpdated: `Live ${lastDateStr}`,
         windowSize,
         currentCandles: activeSlice,
-        extendedCurrentCandles: currentLiveCandles.slice(-Math.max(40, windowSize + 15)),
+        extendedCurrentCandles: allLiveCandles.slice(-Math.max(45, windowSize + 20)),
         matches,
       },
     });

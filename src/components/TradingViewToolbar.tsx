@@ -1,17 +1,14 @@
 import React from 'react';
 import { IndexKey, INDICES } from '@/lib/types';
 import {
-  BarChart2,
   SlidersHorizontal,
   LayoutGrid,
-  Camera,
-  Settings,
   ChevronDown,
   Cloud,
   Check,
-  Maximize2,
-  Zap,
-  Calendar,
+  RefreshCw,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 interface TradingViewToolbarProps {
@@ -22,9 +19,10 @@ interface TradingViewToolbarProps {
   patternWindow: number;
   onSelectWindow: (w: number) => void;
   currentPrice?: number;
-  lastUpdated?: string;
   isRefreshing: boolean;
   onRefresh: () => void;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
 }
 
 export const TradingViewToolbar: React.FC<TradingViewToolbarProps> = ({
@@ -35,45 +33,75 @@ export const TradingViewToolbar: React.FC<TradingViewToolbarProps> = ({
   patternWindow,
   onSelectWindow,
   currentPrice,
-  lastUpdated,
   isRefreshing,
   onRefresh,
+  theme,
+  onToggleTheme,
 }) => {
   const [symbolDropdownOpen, setSymbolDropdownOpen] = React.useState(false);
   const activeInfo = INDICES[selectedSymbol];
 
   const indices: IndexKey[] = ['^NSEBANK', '^NSEI', '^BSESN'];
+  const isDark = theme === 'dark';
 
   return (
-    <div className="h-12 border-b border-[#2a2e39] bg-[#1e222d] text-[#d1d4dc] flex items-center justify-between px-3 text-xs select-none sticky top-0 z-50">
+    <div
+      className={`h-12 border-b flex items-center justify-between px-3 text-xs select-none sticky top-0 z-50 transition-colors ${
+        isDark
+          ? 'border-[#2a2e39] bg-[#1e222d] text-[#d1d4dc]'
+          : 'border-[#e0e3eb] bg-[#f0f3fa] text-[#131722]'
+      }`}
+    >
       {/* Left controls */}
       <div className="flex items-center gap-2">
         {/* TradingView / Stark Branding Pill */}
-        <div className="flex items-center gap-1.5 pr-2.5 border-r border-[#2a2e39]">
+        <div
+          className={`flex items-center gap-1.5 pr-2.5 border-r ${
+            isDark ? 'border-[#2a2e39]' : 'border-[#e0e3eb]'
+          }`}
+        >
           <div className="h-6 w-6 rounded bg-[#2962ff] flex items-center justify-center font-bold text-white text-[11px] shadow">
             TV
           </div>
-          <span className="font-bold tracking-tight text-white hidden sm:inline">IndexFractal</span>
+          <span className={`font-bold tracking-tight hidden sm:inline ${isDark ? 'text-white' : 'text-[#131722]'}`}>
+            IndexFractal
+          </span>
         </div>
 
         {/* Symbol Selector Dropdown Pill */}
         <div className="relative">
           <button
             onClick={() => setSymbolDropdownOpen(!symbolDropdownOpen)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded hover:bg-[#2a2e39] font-bold text-white tracking-wide transition"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded font-bold tracking-wide transition ${
+              isDark
+                ? 'hover:bg-[#2a2e39] text-white'
+                : 'hover:bg-[#e0e3eb] text-[#131722]'
+            }`}
           >
             <span>{activeInfo.name}</span>
-            <span className="text-[10px] text-[#787b86] font-mono px-1 rounded bg-[#131722]">
+            <span
+              className={`text-[10px] font-mono px-1 rounded ${
+                isDark ? 'bg-[#131722] text-[#787b86]' : 'bg-[#ffffff] text-[#787b86] border border-[#e0e3eb]'
+              }`}
+            >
               {timeframeMode === '1m' ? '1m' : '1D'}
             </span>
-            <span className="text-[10px] text-[#787b86] font-mono px-1 rounded bg-[#131722]">
+            <span
+              className={`text-[10px] font-mono px-1 rounded ${
+                isDark ? 'bg-[#131722] text-[#787b86]' : 'bg-[#ffffff] text-[#787b86] border border-[#e0e3eb]'
+              }`}
+            >
               {activeInfo.tag}
             </span>
             <ChevronDown className="h-3 w-3 text-[#787b86]" />
           </button>
 
           {symbolDropdownOpen && (
-            <div className="absolute top-10 left-0 w-56 rounded-md bg-[#1e222d] border border-[#2a2e39] shadow-2xl py-1 z-50">
+            <div
+              className={`absolute top-10 left-0 w-60 rounded-md border shadow-2xl py-1 z-50 ${
+                isDark ? 'bg-[#1e222d] border-[#2a2e39]' : 'bg-[#ffffff] border-[#e0e3eb]'
+              }`}
+            >
               <div className="px-3 py-1.5 text-[10px] text-[#787b86] uppercase font-bold tracking-wider">
                 Select Indian Index
               </div>
@@ -86,8 +114,14 @@ export const TradingViewToolbar: React.FC<TradingViewToolbarProps> = ({
                       onSelectSymbol(key);
                       setSymbolDropdownOpen(false);
                     }}
-                    className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-[#2a2e39] transition ${
-                      selectedSymbol === key ? 'text-[#2962ff] font-bold bg-[#2a2e39]/50' : 'text-[#d1d4dc]'
+                    className={`w-full px-3 py-2 text-left flex items-center justify-between transition ${
+                      isDark ? 'hover:bg-[#2a2e39]' : 'hover:bg-[#f0f3fa]'
+                    } ${
+                      selectedSymbol === key
+                        ? 'text-[#2962ff] font-bold'
+                        : isDark
+                        ? 'text-[#d1d4dc]'
+                        : 'text-[#131722]'
                     }`}
                   >
                     <span>{info.name}</span>
@@ -99,8 +133,12 @@ export const TradingViewToolbar: React.FC<TradingViewToolbarProps> = ({
           )}
         </div>
 
-        {/* Timeframe Buttons (Exact TradingView style: 1m, 5m, 15m, 1D) */}
-        <div className="hidden md:flex items-center border-l border-[#2a2e39] pl-2 gap-1 font-mono text-[11px]">
+        {/* Timeframe Buttons: 1m vs 1D */}
+        <div
+          className={`flex items-center border-l pl-2 gap-1 font-mono text-[11px] ${
+            isDark ? 'border-[#2a2e39]' : 'border-[#e0e3eb]'
+          }`}
+        >
           <button
             onClick={() => {
               onSelectTimeframeMode('1m');
@@ -109,7 +147,9 @@ export const TradingViewToolbar: React.FC<TradingViewToolbarProps> = ({
             className={`px-2 py-1 rounded transition ${
               timeframeMode === '1m'
                 ? 'bg-[#2962ff] text-white font-bold'
-                : 'text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#2a2e39]'
+                : isDark
+                ? 'text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#2a2e39]'
+                : 'text-[#787b86] hover:text-[#131722] hover:bg-[#e0e3eb]'
             }`}
           >
             1m (Supabase)
@@ -122,42 +162,32 @@ export const TradingViewToolbar: React.FC<TradingViewToolbarProps> = ({
             className={`px-2 py-1 rounded transition ${
               timeframeMode === 'daily'
                 ? 'bg-[#2962ff] text-white font-bold'
-                : 'text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#2a2e39]'
+                : isDark
+                ? 'text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#2a2e39]'
+                : 'text-[#787b86] hover:text-[#131722] hover:bg-[#e0e3eb]'
             }`}
           >
             1D (Daily)
           </button>
         </div>
 
-        {/* Chart Style Icon (Candlesticks) */}
-        <div className="hidden lg:flex items-center border-l border-[#2a2e39] pl-2 text-[#787b86]">
-          <div className="p-1.5 rounded hover:bg-[#2a2e39] text-[#2962ff] cursor-pointer" title="Candlesticks">
-            <BarChart2 className="h-4 w-4" />
-          </div>
-        </div>
-
-        {/* Indicators Button fx */}
-        <div className="flex items-center border-l border-[#2a2e39] pl-2">
-          <button
-            onClick={onRefresh}
-            className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[#2a2e39] text-[#d1d4dc] text-[11px] transition"
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5 text-[#2962ff]" />
-            <span className="hidden sm:inline">DTW Twins</span>
-          </button>
-        </div>
-
-        {/* Pattern Window Quick Switcher */}
-        <div className="flex items-center border-l border-[#2a2e39] pl-2 gap-1 text-[11px] font-mono">
-          <span className="text-[#787b86] hidden sm:inline">Window:</span>
-          {(timeframeMode === '1m' ? [15, 20, 30] : [5, 10, 20]).map((w) => (
+        {/* Window Lookback Range Buttons */}
+        <div
+          className={`flex items-center border-l pl-2 gap-1 text-[11px] font-mono ${
+            isDark ? 'border-[#2a2e39]' : 'border-[#e0e3eb]'
+          }`}
+        >
+          <span className="text-[#787b86] hidden md:inline">Window:</span>
+          {(timeframeMode === '1m' ? [15, 20, 30, 45] : [5, 10, 20, 45]).map((w) => (
             <button
               key={w}
               onClick={() => onSelectWindow(w)}
               className={`px-2 py-0.5 rounded transition ${
                 patternWindow === w
-                  ? 'bg-[#2a2e39] text-white font-bold border border-[#434651]'
-                  : 'text-[#787b86] hover:text-[#d1d4dc]'
+                  ? 'bg-[#2962ff] text-white font-bold'
+                  : isDark
+                  ? 'text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#2a2e39]'
+                  : 'text-[#787b86] hover:text-[#131722] hover:bg-[#e0e3eb]'
               }`}
             >
               {w}{timeframeMode === '1m' ? 'm' : 'D'}
@@ -167,22 +197,55 @@ export const TradingViewToolbar: React.FC<TradingViewToolbarProps> = ({
       </div>
 
       {/* Right controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         {/* Live Spot Price */}
         {currentPrice && (
-          <div className="flex items-center gap-2 font-mono text-xs">
+          <div className="flex items-center gap-1.5 font-mono text-xs">
             <span className="text-[#787b86] hidden sm:inline">LTP:</span>
-            <span className="text-white font-extrabold px-2 py-0.5 rounded bg-[#131722] border border-[#2a2e39]">
+            <span
+              className={`font-extrabold px-2 py-0.5 rounded border ${
+                isDark
+                  ? 'bg-[#131722] border-[#2a2e39] text-white'
+                  : 'bg-[#ffffff] border-[#e0e3eb] text-[#131722]'
+              }`}
+            >
               ₹{currentPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
             </span>
           </div>
         )}
 
         {/* Dual Layout Indicator */}
-        <div className="flex items-center gap-1 p-1 rounded bg-[#131722] border border-[#2a2e39] text-[10px] font-mono text-[#787b86]">
+        <div
+          className={`flex items-center gap-1 p-1 rounded border text-[10px] font-mono text-[#787b86] ${
+            isDark ? 'bg-[#131722] border-[#2a2e39]' : 'bg-[#ffffff] border-[#e0e3eb]'
+          }`}
+        >
           <LayoutGrid className="h-3.5 w-3.5 text-[#2962ff]" />
-          <span className="hidden md:inline">2 Charts</span>
+          <span className="hidden md:inline">Dual View</span>
         </div>
+
+        {/* Theme Toggle Button (Pure Black vs Pure White) */}
+        <button
+          onClick={onToggleTheme}
+          className={`flex items-center gap-1 px-2 py-1 rounded border transition text-[11px] font-mono ${
+            isDark
+              ? 'bg-[#131722] border-[#2a2e39] text-[#d1d4dc] hover:text-white'
+              : 'bg-[#ffffff] border-[#e0e3eb] text-[#131722] hover:bg-[#f0f3fa]'
+          }`}
+          title={isDark ? 'Switch to Pure White Mode' : 'Switch to Pure Black Mode'}
+        >
+          {isDark ? (
+            <>
+              <Sun className="h-3.5 w-3.5 text-amber-400" />
+              <span className="hidden sm:inline">White Mode</span>
+            </>
+          ) : (
+            <>
+              <Moon className="h-3.5 w-3.5 text-blue-500" />
+              <span className="hidden sm:inline">Black Mode</span>
+            </>
+          )}
+        </button>
 
         {/* Cloud Saved Checkmark */}
         <div className="flex items-center gap-1 text-[#089981] text-[11px] hidden sm:flex" title="Cloud Synced">
@@ -190,15 +253,17 @@ export const TradingViewToolbar: React.FC<TradingViewToolbarProps> = ({
           <Check className="h-3 w-3" />
         </div>
 
-        {/* Fullscreen / Refresh */}
+        {/* Refresh */}
         <button
           onClick={onRefresh}
-          className={`p-1.5 rounded hover:bg-[#2a2e39] text-[#787b86] hover:text-white transition ${
-            isRefreshing ? 'animate-spin text-[#2962ff]' : ''
-          }`}
+          className={`p-1.5 rounded transition ${
+            isDark
+              ? 'hover:bg-[#2a2e39] text-[#787b86] hover:text-white'
+              : 'hover:bg-[#e0e3eb] text-[#787b86] hover:text-[#131722]'
+          } ${isRefreshing ? 'animate-spin text-[#2962ff]' : ''}`}
           title="Refresh Analysis"
         >
-          <Settings className="h-4 w-4" />
+          <RefreshCw className="h-3.5 w-3.5" />
         </button>
       </div>
     </div>
