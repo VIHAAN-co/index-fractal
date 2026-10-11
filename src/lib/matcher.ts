@@ -1,14 +1,47 @@
 import { Candle, AnalogMatch, ComparisonData, IndexKey, INDICES } from './types';
 
-// Normalizes price series to percentage changes starting from index 0 = 0%
-function normalizeSeries(prices: number[]): number[] {
-  if (prices.length === 0) return [];
-  const base = prices[0];
-  if (base === 0) return prices.map(() => 0);
-  return prices.map((p) => Math.round(((p - base) / base) * 10000) / 100);
+// Z-Score Normalization (Zero mean, unit variance)
+// Standardizes price series so swings are compared on structural shape rather than absolute points
+function zScoreNormalize(prices: number[]): number[] {
+  const n = prices.length;
+  if (n === 0) return [];
+  const mean = prices.reduce((a, b) => a + b, 0) / n;
+  const variance = prices.reduce((a, b) => a + (b - mean) ** 2, 0) / n;
+  const std = Math.sqrt(variance) || 1e-6;
+  return prices.map((p) => (p - mean) / std);
 }
 
-// Pearson Correlation Coefficient
+// Dynamic Time Warping (DTW) with Sakoe-Chiba constraint
+// Finds the optimal non-linear alignment between two price waves
+function dynamicTimeWarping(s1: number[], s2: number[], windowRadius: number = 3): number {
+  const n = s1.length;
+  const m = s2.length;
+  const w = Math.max(windowRadius, Math.abs(n - m));
+
+  const dtw: number[][] = Array.from({ length: n + 1 }, () =>
+    new Array(m + 1).fill(Infinity)
+  );
+
+  dtw[0][0] = 0;
+
+  for (let i = 1; i <= n; i++) {
+    const jStart = Math.max(1, i - w);
+    const jEnd = Math.min(m, i + w);
+
+    for (let j = jStart; j <= jEnd; j++) {
+      const cost = Math.abs(s1[i - 1] - s2[j - 1]);
+      dtw[i][j] = cost + Math.min(
+        dtw[i - 1][j],
+        dtw[i][j - 1],
+        dtw[i - 1][j - 1]
+      );
+    }
+  }
+
+  return dtw[n][m] / (n + m);
+}
+
+// Pearson Correlation Coefficient for directional slope alignment
 function pearsonCorrelation(x: number[], y: number[]): number {
   const n = x.length;
   if (n !== y.length || n < 2) return 0;
@@ -40,18 +73,6 @@ function pearsonCorrelation(x: number[], y: number[]): number {
   return numerator / denominator;
 }
 
-// Normalized Mean Squared Error
-function meanSquaredError(x: number[], y: number[]): number {
-  const n = x.length;
-  if (n !== y.length || n === 0) return 999;
-  let sum = 0;
-  for (let i = 0; i < n; i++) {
-    const diff = x[i] - y[i];
-    sum += diff * diff;
-  }
-  return sum / n;
-}
-
 export function compareHistoricalAnalogs(
   symbol: IndexKey,
   candles: Candle[],
@@ -77,7 +98,7 @@ export function compareHistoricalAnalogs(
   // Current active pattern window
   const currentCandles = candles.slice(totalCandles - windowSize);
   const currentCloses = currentCandles.map((c) => c.close);
-  const currentNormalized = normalizeSeries(currentCloses);
+  const currentZScore = zScoreNormalize(currentCloses);
 
   const latestCandle = candles[totalCandles - 1];
   const prevCandle = candles[totalCandles - 2];
@@ -85,35 +106,40 @@ export function compareHistoricalAnalogs(
   const change1d = Math.round((latestCandle.close - prevCandle.close) * 100) / 100;
   const change1dPct = Math.round((change1d / prevCandle.close) * 10000) / 100;
 
-  // Search historical database (from 5 years ago up to 30 days before today)
+  // Search historical database (reserve the last 20 days so we don't match against ongoing sessions)
   const searchLimit = totalCandles - windowSize - 15;
   const candidates: {
     startIndex: number;
+    dtwDistance: number;
     correlation: number;
-    mse: number;
-    score: number;
+    compositeScore: number;
   }[] = [];
 
   for (let i = 0; i <= searchLimit; i++) {
     const candidateSlice = candles.slice(i, i + windowSize);
     const candidateCloses = candidateSlice.map((c) => c.close);
-    const candidateNormalized = normalizeSeries(candidateCloses);
+    const candidateZScore = zScoreNormalize(candidateCloses);
 
-    const corr = pearsonCorrelation(currentNormalized, candidateNormalized);
-    const mse = meanSquaredError(currentNormalized, candidateNormalized);
+    // 1. Dynamic Time Warping (Elastic Shape Matching)
+    const dtwDist = dynamicTimeWarping(currentZScore, candidateZScore, 3);
 
-    if (corr > 0.60) {
-      const score = corr * 100 - Math.min(mse, 40);
+    // 2. Pearson Correlation (Directional Slope Matching)
+    const corr = pearsonCorrelation(currentZScore, candidateZScore);
+
+    if (corr > 0.55 && dtwDist < 0.85) {
+      // Score: lower DTW distance + higher correlation
+      const compositeScore = corr * 70 - dtwDist * 40;
       candidates.push({
         startIndex: i,
+        dtwDistance: dtwDist,
         correlation: corr,
-        mse,
-        score,
+        compositeScore,
       });
     }
   }
 
-  candidates.sort((a, b) => b.score - a.score);
+  // Sort by highest composite score
+  candidates.sort((a, b) => b.compositeScore - a.compositeScore);
 
   // Pick top 3 non-overlapping matches
   const selectedMatches: AnalogMatch[] = [];
@@ -121,7 +147,7 @@ export function compareHistoricalAnalogs(
 
   for (const candidate of candidates) {
     const isOverlapping = selectedIndices.some(
-      (idx) => Math.abs(idx - candidate.startIndex) < Math.floor(windowSize * 0.8)
+      (idx) => Math.abs(idx - candidate.startIndex) < Math.floor(windowSize * 0.85)
     );
 
     if (!isOverlapping) {
@@ -131,7 +157,7 @@ export function compareHistoricalAnalogs(
         candidate.startIndex,
         candidate.startIndex + windowSize
       );
-      // Take the next 10 forward candles that occurred historically
+      // Next 10 sessions that followed historically
       const forwardSlice = candles.slice(
         candidate.startIndex + windowSize,
         Math.min(candidate.startIndex + windowSize + 10, totalCandles)
@@ -163,18 +189,19 @@ export function compareHistoricalAnalogs(
       const maxDrawdownPct =
         Math.round(((minLowForward - matchEndPrice) / matchEndPrice) * 10000) / 100;
 
+      // Elastic similarity score combines DTW fit and Pearson correlation
       const similarityPct = Math.round(
         Math.max(
-          50,
+          60,
           Math.min(
             99,
-            (candidate.correlation * 0.75 + (1 / (1 + candidate.mse * 0.08)) * 0.25) * 100
+            ((1 - candidate.dtwDistance * 0.6) * 0.5 + candidate.correlation * 0.5) * 100
           )
         )
       );
 
       selectedMatches.push({
-        id: `match-${candidate.startIndex}`,
+        id: `dtw-match-${candidate.startIndex}`,
         rank: selectedMatches.length + 1,
         startDate: patternSlice[0].time,
         endDate: patternSlice[patternSlice.length - 1].time,
