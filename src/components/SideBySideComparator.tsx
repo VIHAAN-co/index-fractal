@@ -90,6 +90,8 @@ export const SideBySideComparator: React.FC<SideBySideComparatorProps> = ({
         borderColor: isDark ? '#2a2e39' : '#e0e3eb',
         timeVisible: is1MinMode,
         secondsVisible: false,
+        barSpacing: is1MinMode ? 18 : 10,
+        minBarSpacing: 6,
       },
     });
 
@@ -203,10 +205,12 @@ export const SideBySideComparator: React.FC<SideBySideComparatorProps> = ({
 
   // Render Current Chart (Left)
   useEffect(() => {
-    if (!leftChartContainerRef.current || data.extendedCurrentCandles.length === 0) return;
+    if (!leftChartContainerRef.current) return;
+    const candlesToRender = is1MinMode ? data.currentCandles : data.extendedCurrentCandles;
+    if (candlesToRender.length === 0) return;
     renderChart(
       leftChartContainerRef.current,
-      data.extendedCurrentCandles,
+      candlesToRender,
       leftChartRef,
       leftCandleSeriesRef
     );
