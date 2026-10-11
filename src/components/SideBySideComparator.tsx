@@ -177,8 +177,25 @@ export const SideBySideComparator: React.FC<SideBySideComparatorProps> = ({ data
     );
   }
 
-  const currentFirstDate = data.currentCandles[0]?.time;
-  const currentLastDate = data.currentCandles[data.currentCandles.length - 1]?.time;
+  const is1MinMode = typeof data.currentCandles[0]?.time === 'number';
+
+  const formatDisplayTime = (val: string | number | undefined) => {
+    if (!val) return '';
+    if (typeof val === 'number') {
+      const d = new Date(val * 1000);
+      return d.toLocaleTimeString('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+    return String(val);
+  };
+
+  const currentFirstDate = formatDisplayTime(data.currentCandles[0]?.time);
+  const currentLastDate = formatDisplayTime(
+    data.currentCandles[data.currentCandles.length - 1]?.time
+  );
   const isPositiveForward = currentMatch.forwardReturnPct >= 0;
 
   return (
@@ -187,7 +204,7 @@ export const SideBySideComparator: React.FC<SideBySideComparatorProps> = ({ data
       <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border border-zinc-800 bg-zinc-900/60">
         <div className="flex items-center gap-2 text-xs font-mono text-zinc-300">
           <Layers className="h-4 w-4 text-amber-400" />
-          <span>Closest Historical Twins (5-Year Scan):</span>
+          <span>Closest Historical Twins (Deep Scan):</span>
         </div>
 
         <div className="flex items-center gap-2 font-mono text-xs">
@@ -201,7 +218,7 @@ export const SideBySideComparator: React.FC<SideBySideComparatorProps> = ({ data
                   : 'bg-zinc-800/80 text-zinc-400 border-zinc-700 hover:text-white'
               }`}
             >
-              #{m.rank} {m.startDate.slice(0, 7)} ({m.similarityPct}% Match)
+              #{m.rank} {m.startDate.slice(0, 10)} ({m.similarityPct}% Match)
             </button>
           ))}
         </div>
@@ -220,7 +237,7 @@ export const SideBySideComparator: React.FC<SideBySideComparatorProps> = ({ data
                 </h3>
               </div>
               <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
-                Current {data.windowSize}-Day Wave
+                Current {data.windowSize}-{is1MinMode ? 'Minute' : 'Session'} Wave
               </span>
             </div>
 
