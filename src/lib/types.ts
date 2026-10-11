@@ -33,7 +33,7 @@ export const INDICES: Record<IndexKey, IndexInfo> = {
 };
 
 export interface Candle {
-  time: string; // YYYY-MM-DD
+  time: string | number; // YYYY-MM-DD or unix timestamp in seconds
   open: number;
   high: number;
   low: number;

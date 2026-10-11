@@ -71,7 +71,7 @@ export async function fetchHistoricalData(symbol: IndexKey): Promise<Candle[]> {
 
   // Deduplicate timestamps if any
   const uniqueCandles: Candle[] = [];
-  const seenDates = new Set<string>();
+  const seenDates = new Set<string | number>();
 
   for (const candle of candles) {
     if (!seenDates.has(candle.time)) {

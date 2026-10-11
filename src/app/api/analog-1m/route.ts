@@ -47,7 +47,8 @@ export async function GET(request: NextRequest) {
     const url = `https://query2.finance.yahoo.com/v8/finance/chart/%5ENSEBANK?range=1d&interval=1m&includePrePost=false`;
     const yfRes = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Accept: 'application/json',
       },
       next: { revalidate: 30 },
@@ -59,24 +60,26 @@ export async function GET(request: NextRequest) {
 
     const yfJson = await yfRes.json();
     const result = yfJson?.chart?.result?.[0];
-    const timestamps: number[] = result.timestamp || [];
-    const quote = result.indicators.quote[0];
+    const timestamps: number[] = result?.timestamp || [];
+    const quote = result?.indicators?.quote?.[0] || {};
 
     const currentLiveCandles: Candle[] = [];
     for (let i = 0; i < timestamps.length; i++) {
-      const c = quote.close[i];
-      if (c !== null && !isNaN(c)) {
-        const d = new Date(timestamps[i] * 1000);
-        const timeStr = d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+      const c = quote.close?.[i];
+      if (c !== null && c !== undefined && !isNaN(c)) {
         currentLiveCandles.push({
-          time: timeStr,
-          open: Math.round((quote.open[i] || c) * 100) / 100,
-          high: Math.round((quote.high[i] || c) * 100) / 100,
-          low: Math.round((quote.low[i] || c) * 100) / 100,
+          time: timestamps[i],
+          open: Math.round((quote.open?.[i] || c) * 100) / 100,
+          high: Math.round((quote.high?.[i] || c) * 100) / 100,
+          low: Math.round((quote.low?.[i] || c) * 100) / 100,
           close: Math.round(c * 100) / 100,
-          volume: quote.volume[i] || 0,
+          volume: quote.volume?.[i] || 0,
         });
       }
+    }
+
+    if (currentLiveCandles.length < windowSize) {
+      throw new Error(`Insufficient live 1-min candles (${currentLiveCandles.length})`);
     }
 
     const activeSlice = currentLiveCandles.slice(-windowSize);
@@ -84,7 +87,6 @@ export async function GET(request: NextRequest) {
     const activeZScore = zScoreNormalize(activeCloses);
 
     // 2. Query deep 1-minute historical sessions from Supabase
-    // We fetch a diverse historical sample of 1-minute session chunks
     const { data: histRows, error: sbError } = await supabase
       .from('banknifty_1m')
       .select('date, time, open, high, low, close')
@@ -95,25 +97,52 @@ export async function GET(request: NextRequest) {
       throw new Error(sbError?.message || 'Insufficient deep historical 1-min data in Supabase');
     }
 
-    // Convert to structured candles
-    const histCandles: Candle[] = histRows.map((r) => ({
-      time: `${r.date} ${r.time.slice(0, 5)}`,
-      open: parseFloat(r.open),
-      high: parseFloat(r.high),
-      low: parseFloat(r.low),
-      close: parseFloat(r.close),
-      volume: 0,
-    }));
-    // Order chronologically
-    histCandles.reverse();
+    interface HistItem {
+      candle: Candle;
+      dateLabel: string;
+    }
+
+    const histItems: HistItem[] = histRows.map((r, idx) => {
+      let unixSec = 0;
+      try {
+        const [d, m, y] = r.date.split('-');
+        const [hr, min, sec] = r.time.split(':');
+        const dt = new Date(
+          Date.UTC(
+            parseInt(y),
+            parseInt(m) - 1,
+            parseInt(d),
+            parseInt(hr),
+            parseInt(min),
+            parseInt(sec || 0)
+          )
+        );
+        unixSec = Math.floor(dt.getTime() / 1000);
+      } catch (e) {
+        unixSec = 1713783000 + idx * 60;
+      }
+      return {
+        dateLabel: `${r.date} ${r.time.slice(0, 5)}`,
+        candle: {
+          time: unixSec,
+          open: parseFloat(r.open),
+          high: parseFloat(r.high),
+          low: parseFloat(r.low),
+          close: parseFloat(r.close),
+          volume: 0,
+        },
+      };
+    });
+
+    histItems.reverse();
 
     // 3. Slide window & compute DTW distance
     const candidates: { startIndex: number; dtwDistance: number }[] = [];
-    const limit = histCandles.length - windowSize - 12;
+    const limit = histItems.length - windowSize - 12;
 
     for (let i = 0; i < limit; i++) {
-      const slice = histCandles.slice(i, i + windowSize);
-      const closes = slice.map((c) => c.close);
+      const slice = histItems.slice(i, i + windowSize);
+      const closes = slice.map((item) => item.candle.close);
       const zscore = zScoreNormalize(closes);
       const dtwDist = dynamicTimeWarping(activeZScore, zscore, 3);
       candidates.push({ startIndex: i, dtwDistance: dtwDist });
@@ -133,29 +162,43 @@ export async function GET(request: NextRequest) {
       if (!isOverlapping) {
         chosenIndices.push(cand.startIndex);
 
-        const patternSlice = histCandles.slice(cand.startIndex, cand.startIndex + windowSize);
-        const forwardSlice = histCandles.slice(cand.startIndex + windowSize, cand.startIndex + windowSize + 12);
-        const allCandles = [...patternSlice, ...forwardSlice];
+        const patternItems = histItems.slice(cand.startIndex, cand.startIndex + windowSize);
+        const forwardItems = histItems.slice(
+          cand.startIndex + windowSize,
+          cand.startIndex + windowSize + 12
+        );
 
-        const matchStartPrice = patternSlice[0].close;
-        const matchEndPrice = patternSlice[patternSlice.length - 1].close;
-        const forwardEndPrice = forwardSlice[forwardSlice.length - 1]?.close || matchEndPrice;
+        const patternCandles = patternItems.map((pi) => pi.candle);
+        const forwardCandles = forwardItems.map((fi) => fi.candle);
+        const allCandles = [...patternCandles, ...forwardCandles];
 
-        const forwardReturnPct = Math.round(((forwardEndPrice - matchEndPrice) / matchEndPrice) * 10000) / 100;
-        const maxHigh = Math.max(...forwardSlice.map((c) => c.high), matchEndPrice);
-        const minLow = Math.min(...forwardSlice.map((c) => c.low), matchEndPrice);
+        const matchStartPrice = patternCandles[0].close;
+        const matchEndPrice = patternCandles[patternCandles.length - 1].close;
+        const forwardEndPrice =
+          forwardCandles[forwardCandles.length - 1]?.close || matchEndPrice;
 
-        const maxUpsidePct = Math.round(((maxHigh - matchEndPrice) / matchEndPrice) * 10000) / 100;
-        const maxDrawdownPct = Math.round(((minLow - matchEndPrice) / matchEndPrice) * 10000) / 100;
+        const forwardReturnPct =
+          Math.round(((forwardEndPrice - matchEndPrice) / matchEndPrice) * 10000) / 100;
+        const maxHigh = Math.max(...forwardCandles.map((c) => c.high), matchEndPrice);
+        const minLow = Math.min(...forwardCandles.map((c) => c.low), matchEndPrice);
 
-        const similarityPct = Math.round(Math.max(65, Math.min(99, (1 - cand.dtwDistance * 0.5) * 100)));
+        const maxUpsidePct =
+          Math.round(((maxHigh - matchEndPrice) / matchEndPrice) * 10000) / 100;
+        const maxDrawdownPct =
+          Math.round(((minLow - matchEndPrice) / matchEndPrice) * 10000) / 100;
+
+        const similarityPct = Math.round(
+          Math.max(65, Math.min(99, (1 - cand.dtwDistance * 0.5) * 100))
+        );
 
         matches.push({
           id: `1m-twin-${cand.startIndex}`,
           rank: matches.length + 1,
-          startDate: patternSlice[0].time,
-          endDate: patternSlice[patternSlice.length - 1].time,
-          forwardEndDate: forwardSlice[forwardSlice.length - 1]?.time || patternSlice[patternSlice.length - 1].time,
+          startDate: patternItems[0].dateLabel,
+          endDate: patternItems[patternItems.length - 1].dateLabel,
+          forwardEndDate:
+            forwardItems[forwardItems.length - 1]?.dateLabel ||
+            patternItems[patternItems.length - 1].dateLabel,
           correlation: Math.round((1 - cand.dtwDistance * 0.5) * 100) / 100,
           similarityPct,
           matchStartPrice,
@@ -166,8 +209,8 @@ export async function GET(request: NextRequest) {
           maxLowForward: minLow,
           maxUpsidePct,
           maxDrawdownPct,
-          patternCandles: patternSlice,
-          forwardCandles: forwardSlice,
+          patternCandles,
+          forwardCandles,
           allCandles,
         });
 
@@ -176,6 +219,12 @@ export async function GET(request: NextRequest) {
     }
 
     const currentCandle = activeSlice[activeSlice.length - 1];
+    const lastDate = new Date((currentCandle.time as number) * 1000);
+    const lastDateStr = lastDate.toLocaleTimeString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
 
     return NextResponse.json({
       success: true,
@@ -186,7 +235,7 @@ export async function GET(request: NextRequest) {
         currentPrice: currentCandle.close,
         change1d: 0,
         change1dPct: 0,
-        lastUpdated: currentCandle.time,
+        lastUpdated: `Live ${lastDateStr}`,
         windowSize,
         currentCandles: activeSlice,
         extendedCurrentCandles: currentLiveCandles.slice(-Math.max(40, windowSize + 15)),

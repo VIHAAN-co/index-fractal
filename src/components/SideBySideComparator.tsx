@@ -49,6 +49,8 @@ export const SideBySideComparator: React.FC<SideBySideComparatorProps> = ({ data
       chartRefStore.current = null;
     }
 
+    const isIntraday = typeof candles[0]?.time === 'number';
+
     const chart = createChart(container, {
       width: container.clientWidth,
       height: 380,
@@ -72,7 +74,7 @@ export const SideBySideComparator: React.FC<SideBySideComparatorProps> = ({ data
       },
       timeScale: {
         borderColor: '#27272a',
-        timeVisible: false,
+        timeVisible: isIntraday,
         secondsVisible: false,
       },
     });
@@ -87,16 +89,36 @@ export const SideBySideComparator: React.FC<SideBySideComparatorProps> = ({ data
       wickDownColor: '#f43f5e',
     });
 
-    const candleData: CandlestickData[] = candles.map((c) => ({
-      time: c.time as any,
+    // Map, sort chronologically, and deduplicate to guarantee lightweight-charts stability
+    const rawData = candles.map((c) => ({
+      time: (typeof c.time === 'number' ? Math.floor(c.time) : c.time) as any,
       open: c.open,
       high: c.high,
       low: c.low,
       close: c.close,
     }));
 
-    candleSeries.setData(candleData);
-    chart.timeScale().fitContent();
+    rawData.sort((a, b) => {
+      const ta = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
+      const tb = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
+      return ta - tb;
+    });
+
+    const uniqueData: CandlestickData[] = [];
+    const seenTimes = new Set<any>();
+    for (const item of rawData) {
+      if (!seenTimes.has(item.time)) {
+        seenTimes.add(item.time);
+        uniqueData.push(item);
+      }
+    }
+
+    try {
+      candleSeries.setData(uniqueData);
+      chart.timeScale().fitContent();
+    } catch (err) {
+      console.error('Lightweight-charts setData error:', err);
+    }
   };
 
   // Render Current Chart (Left)

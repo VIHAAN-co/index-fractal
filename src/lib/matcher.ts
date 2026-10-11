@@ -203,12 +203,13 @@ export function compareHistoricalAnalogs(
       selectedMatches.push({
         id: `dtw-match-${candidate.startIndex}`,
         rank: selectedMatches.length + 1,
-        startDate: patternSlice[0].time,
-        endDate: patternSlice[patternSlice.length - 1].time,
-        forwardEndDate:
+        startDate: String(patternSlice[0].time),
+        endDate: String(patternSlice[patternSlice.length - 1].time),
+        forwardEndDate: String(
           forwardSlice.length > 0
             ? forwardSlice[forwardSlice.length - 1].time
-            : patternSlice[patternSlice.length - 1].time,
+            : patternSlice[patternSlice.length - 1].time
+        ),
         correlation: Math.round(candidate.correlation * 100) / 100,
         similarityPct,
         matchStartPrice,
@@ -235,7 +236,7 @@ export function compareHistoricalAnalogs(
     currentPrice,
     change1d,
     change1dPct,
-    lastUpdated: latestCandle.time,
+    lastUpdated: String(latestCandle.time),
     windowSize,
     currentCandles,
     extendedCurrentCandles: candles.slice(-Math.max(35, windowSize + 15)),
