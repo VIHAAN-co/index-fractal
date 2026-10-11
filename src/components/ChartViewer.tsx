@@ -1,9 +1,17 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart, IChartApi, ISeriesApi, CandlestickData, LineData, ColorType } from 'lightweight-charts';
+import {
+  createChart,
+  IChartApi,
+  CandlestickData,
+  LineData,
+  ColorType,
+  CandlestickSeries,
+  LineSeries,
+} from 'lightweight-charts';
 import { Candle, AnalogMatch } from '@/lib/types';
-import { Eye, Layers, TrendingUp } from 'lucide-react';
+import { Eye, Layers } from 'lucide-react';
 
 interface ChartViewerProps {
   candles: Candle[];
@@ -14,7 +22,6 @@ interface ChartViewerProps {
 
 export const ChartViewer: React.FC<ChartViewerProps> = ({
   candles,
-  patternWindow,
   matches,
   symbolName,
 }) => {
@@ -22,131 +29,145 @@ export const ChartViewer: React.FC<ChartViewerProps> = ({
   const chartInstanceRef = useRef<IChartApi | null>(null);
   const [showProjection, setShowProjection] = useState<boolean>(true);
   const [selectedAnalogIndex, setSelectedAnalogIndex] = useState<number>(0);
+  const [chartError, setChartError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!chartContainerRef.current || candles.length === 0) return;
 
     // Clean up previous instance if any
     if (chartInstanceRef.current) {
-      chartInstanceRef.current.remove();
+      try {
+        chartInstanceRef.current.remove();
+      } catch (e) {
+        console.error('Error removing previous chart:', e);
+      }
       chartInstanceRef.current = null;
     }
 
-    const container = chartContainerRef.current;
-    const chart = createChart(container, {
-      width: container.clientWidth,
-      height: 420,
-      layout: {
-        background: { type: ColorType.Solid, color: '#09090b' },
-        textColor: '#a1a1aa',
-        fontFamily: 'monospace',
-      },
-      grid: {
-        vertLines: { color: '#18181b' },
-        horzLines: { color: '#18181b' },
-      },
-      crosshair: {
-        mode: 1,
-        vertLine: { color: '#3f3f46', width: 1, style: 2 },
-        horzLine: { color: '#3f3f46', width: 1, style: 2 },
-      },
-      rightPriceScale: {
-        borderColor: '#27272a',
-        scaleMargins: { top: 0.1, bottom: 0.15 },
-      },
-      timeScale: {
-        borderColor: '#27272a',
-        timeVisible: false,
-        secondsVisible: false,
-      },
-    });
-
-    chartInstanceRef.current = chart;
-
-    // Candlestick series
-    const candleSeries = (chart as any).addCandlestickSeries({
-      upColor: '#10b981',
-      downColor: '#f43f5e',
-      borderVisible: false,
-      wickUpColor: '#10b981',
-      wickDownColor: '#f43f5e',
-    });
-
-    const candleData: CandlestickData[] = candles.map((c) => ({
-      time: c.time as any,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
-
-    candleSeries.setData(candleData);
-
-    // If projection is enabled and we have a selected analog
-    const activeAnalog = matches[selectedAnalogIndex] || matches[0];
-    if (showProjection && activeAnalog && candles.length > 0) {
-      const lastCandle = candles[candles.length - 1];
-      const lastDate = new Date(lastCandle.time);
-      const lastClose = lastCandle.close;
-
-      const projectionSeries = (chart as any).addLineSeries({
-        color: '#f59e0b',
-        lineWidth: 2,
-        lineStyle: 2, // Dashed
-        title: `Analog Path (${activeAnalog.startDate.slice(0, 7)})`,
-        priceLineVisible: false,
+    try {
+      const container = chartContainerRef.current;
+      const chart = createChart(container, {
+        width: container.clientWidth,
+        height: 420,
+        layout: {
+          background: { type: ColorType.Solid, color: '#09090b' },
+          textColor: '#a1a1aa',
+          fontFamily: 'monospace',
+        },
+        grid: {
+          vertLines: { color: '#18181b' },
+          horzLines: { color: '#18181b' },
+        },
+        crosshair: {
+          mode: 1,
+          vertLine: { color: '#3f3f46', width: 1, style: 2 },
+          horzLine: { color: '#3f3f46', width: 1, style: 2 },
+        },
+        rightPriceScale: {
+          borderColor: '#27272a',
+          scaleMargins: { top: 0.1, bottom: 0.15 },
+        },
+        timeScale: {
+          borderColor: '#27272a',
+          timeVisible: false,
+          secondsVisible: false,
+        },
       });
 
-      // Map the normalized forward trajectory (+% changes) onto today's close price
-      const forwardTrajectory = activeAnalog.normalizedForward;
-      const projectionData: LineData[] = [
-        { time: lastCandle.time as any, value: lastClose },
-      ];
+      chartInstanceRef.current = chart;
 
-      forwardTrajectory.forEach((pctChange, idx) => {
-        const nextDay = new Date(lastDate);
-        // Advance trading days (skip weekends)
-        let daysToAdd = idx + 1;
-        let dayCount = 0;
-        let curr = new Date(nextDay);
-        while (dayCount < daysToAdd) {
-          curr.setDate(curr.getDate() + 1);
-          if (curr.getDay() !== 0 && curr.getDay() !== 6) {
-            dayCount++;
+      // Candlestick series using lightweight-charts v5 addSeries API
+      const candleSeries = chart.addSeries(CandlestickSeries, {
+        upColor: '#10b981',
+        downColor: '#f43f5e',
+        borderVisible: false,
+        wickUpColor: '#10b981',
+        wickDownColor: '#f43f5e',
+      });
+
+      const candleData: CandlestickData[] = candles.map((c) => ({
+        time: c.time as any,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      }));
+
+      candleSeries.setData(candleData);
+
+      // If projection is enabled and we have a selected analog
+      const activeAnalog = matches[selectedAnalogIndex] || matches[0];
+      if (showProjection && activeAnalog && candles.length > 0) {
+        const lastCandle = candles[candles.length - 1];
+        const lastDate = new Date(lastCandle.time);
+        const lastClose = lastCandle.close;
+
+        const projectionSeries = chart.addSeries(LineSeries, {
+          color: '#f59e0b',
+          lineWidth: 2,
+          lineStyle: 2, // Dashed
+          title: `Analog Path (${activeAnalog.startDate.slice(0, 7)})`,
+          priceLineVisible: false,
+        });
+
+        // Map the normalized forward trajectory (+% changes) onto today's close price
+        const forwardTrajectory = activeAnalog.normalizedForward;
+        const projectionData: LineData[] = [
+          { time: lastCandle.time as any, value: lastClose },
+        ];
+
+        forwardTrajectory.forEach((pctChange, idx) => {
+          const nextDay = new Date(lastDate);
+          // Advance trading days (skip weekends)
+          let daysToAdd = idx + 1;
+          let dayCount = 0;
+          let curr = new Date(nextDay);
+          while (dayCount < daysToAdd) {
+            curr.setDate(curr.getDate() + 1);
+            if (curr.getDay() !== 0 && curr.getDay() !== 6) {
+              dayCount++;
+            }
           }
+
+          const isoDate = curr.toISOString().split('T')[0];
+          const projectedPrice = Math.round(lastClose * (1 + pctChange / 100) * 100) / 100;
+
+          projectionData.push({
+            time: isoDate as any,
+            value: projectedPrice,
+          });
+        });
+
+        projectionSeries.setData(projectionData);
+      }
+
+      chart.timeScale().fitContent();
+
+      const handleResize = () => {
+        if (chartContainerRef.current && chartInstanceRef.current) {
+          chartInstanceRef.current.applyOptions({
+            width: chartContainerRef.current.clientWidth,
+          });
         }
+      };
 
-        const isoDate = curr.toISOString().split('T')[0];
-        const projectedPrice = Math.round(lastClose * (1 + pctChange / 100) * 100) / 100;
+      window.addEventListener('resize', handleResize);
 
-        projectionData.push({
-          time: isoDate as any,
-          value: projectedPrice,
-        });
-      });
-
-      projectionSeries.setData(projectionData);
+      return () => {
+        window.removeEventListener('resize', handleResize);
+        if (chartInstanceRef.current) {
+          try {
+            chartInstanceRef.current.remove();
+          } catch (e) {
+            console.error('Error removing chart on unmount:', e);
+          }
+          chartInstanceRef.current = null;
+        }
+      };
+    } catch (err: any) {
+      console.error('Chart initialization error:', err);
+      setChartError(err.message || 'Failed to initialize chart canvas');
     }
-
-    chart.timeScale().fitContent();
-
-    const handleResize = () => {
-      if (chartContainerRef.current && chartInstanceRef.current) {
-        chartInstanceRef.current.applyOptions({
-          width: chartContainerRef.current.clientWidth,
-        });
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.remove();
-        chartInstanceRef.current = null;
-      }
-    };
   }, [candles, matches, showProjection, selectedAnalogIndex]);
 
   const activeAnalog = matches[selectedAnalogIndex] || matches[0];
@@ -195,7 +216,13 @@ export const ChartViewer: React.FC<ChartViewerProps> = ({
         </div>
       </div>
 
-      <div ref={chartContainerRef} className="w-full relative min-h-[420px]" />
+      {chartError ? (
+        <div className="w-full h-[420px] flex items-center justify-center border border-zinc-800 bg-zinc-900/50 rounded-lg text-zinc-400 font-mono text-xs">
+          Chart could not be rendered: {chartError}
+        </div>
+      ) : (
+        <div ref={chartContainerRef} className="w-full relative min-h-[420px]" />
+      )}
 
       {activeAnalog && showProjection && (
         <div className="mt-3 pt-3 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-zinc-400">
