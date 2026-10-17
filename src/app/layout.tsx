@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IndexFractal | 5-Year Pattern Matcher (Nifty, Bank Nifty, Sensex)",
-  description: "Institutional Indian Index 5-Year Historical Pattern & Analog Expectancy Engine",
+  title: "J.A.S.T.S Fractal | Just Another Smart Trading System",
+  description: "J.A.S.T.S (Just Another Smart Trading System) — Indian Index Historical Fractal & Pattern Matcher",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

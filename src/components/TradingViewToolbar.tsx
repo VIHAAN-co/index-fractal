@@ -64,7 +64,7 @@ export const TradingViewToolbar: React.FC<TradingViewToolbarProps> = ({
             TV
           </div>
           <span className={`font-bold tracking-tight hidden sm:inline ${isDark ? 'text-white' : 'text-[#131722]'}`}>
-            IndexFractal
+            J.A.S.T.S Fractal
           </span>
         </div>
 

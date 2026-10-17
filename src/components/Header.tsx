@@ -16,12 +16,12 @@ export const Header: React.FC<HeaderProps> = ({ lastUpdated, isRefreshing, onRef
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-zinc-100">IndexFractal</h1>
+            <h1 className="text-xl font-bold tracking-tight text-zinc-100">J.A.S.T.S Fractal</h1>
             <span className="text-[10px] uppercase font-mono tracking-widest px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              5-Year Pattern Matcher
+              Pattern Matcher
             </span>
           </div>
-          <p className="text-xs text-zinc-400">Institutional Indian Index Historical Analog & Expectancy Engine</p>
+          <p className="text-xs text-zinc-400">Just Another Smart Trading System · Historical Intraday Analog Engine</p>
         </div>
       </div>
 
