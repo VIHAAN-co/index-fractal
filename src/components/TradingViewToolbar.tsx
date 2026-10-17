@@ -54,17 +54,20 @@ export const TradingViewToolbar: React.FC<TradingViewToolbarProps> = ({
     >
       {/* Left controls */}
       <div className="flex items-center gap-2">
-        {/* TradingView / Stark Branding Pill */}
+        {/* J.A.S.T.S Stark Branding Pill */}
         <div
-          className={`flex items-center gap-1.5 pr-2.5 border-r ${
+          className={`flex items-center gap-2 pr-2.5 border-r ${
             isDark ? 'border-[#2a2e39]' : 'border-[#e0e3eb]'
           }`}
         >
-          <div className="h-6 w-6 rounded bg-[#2962ff] flex items-center justify-center font-bold text-white text-[11px] shadow">
-            TV
+          <div className="h-6 px-2 rounded bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center font-black text-cyan-400 font-mono text-[11px] shadow shadow-cyan-500/10">
+            ⚡ JASTS
           </div>
-          <span className={`font-bold tracking-tight hidden sm:inline ${isDark ? 'text-white' : 'text-[#131722]'}`}>
-            J.A.S.T.S Fractal
+          <span className={`font-black tracking-wider text-xs ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`}>
+            FRACTAL
+          </span>
+          <span className="hidden lg:inline text-[9px] uppercase font-mono tracking-widest text-[#787b86]">
+            (Just Another Smart Trading System)
           </span>
         </div>
 

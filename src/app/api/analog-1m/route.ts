@@ -92,7 +92,19 @@ export async function GET(request: NextRequest) {
       throw new Error(`Insufficient 1-min candles for ${symbol}`);
     }
 
-    // Active recent window
+    // Extract today's full session candles (09:15 to current / close)
+    const getISTDate = (unixSec: number) => {
+      const d = new Date(unixSec * 1000);
+      return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' });
+    };
+
+    const latestDayStr = getISTDate(allLiveCandles[allLiveCandles.length - 1].time as number);
+    const todayCandles = allLiveCandles.filter(
+      (c) => getISTDate(c.time as number) === latestDayStr
+    );
+    const fullSessionCandles = todayCandles.length >= 10 ? todayCandles : allLiveCandles.slice(-375);
+
+    // Active recent window for DTW pattern matching
     const activeSlice = allLiveCandles.slice(-windowSize);
     const activeCloses = activeSlice.map((c) => c.close);
     const activeZScore = zScoreNormalize(activeCloses);
@@ -209,12 +221,16 @@ export async function GET(request: NextRequest) {
         const patternItems = histItems.slice(cand.startIndex, cand.startIndex + windowSize);
         const forwardItems = histItems.slice(
           cand.startIndex + windowSize,
-          cand.startIndex + windowSize + 12
+          cand.startIndex + windowSize + 25
         );
 
         const patternCandles = patternItems.map((pi) => pi.candle);
         const forwardCandles = forwardItems.map((fi) => fi.candle);
-        const allCandles = [...patternCandles, ...forwardCandles];
+
+        const contextBefore = Math.max(0, cand.startIndex - 35);
+        const contextAfter = Math.min(histItems.length, cand.startIndex + windowSize + 45);
+        const sessionCandles = histItems.slice(contextBefore, contextAfter).map((item) => item.candle);
+        const allCandles = sessionCandles.length > 0 ? sessionCandles : [...patternCandles, ...forwardCandles];
 
         const matchStartPrice = patternCandles[0].close;
         const matchEndPrice = patternCandles[patternCandles.length - 1].close;
@@ -285,8 +301,8 @@ export async function GET(request: NextRequest) {
         change1dPct,
         lastUpdated: `Live ${lastDateStr}`,
         windowSize,
-        currentCandles: activeSlice,
-        extendedCurrentCandles: allLiveCandles.slice(-Math.max(45, windowSize + 20)),
+        currentCandles: fullSessionCandles,
+        extendedCurrentCandles: fullSessionCandles,
         matches,
       },
     });
